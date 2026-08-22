@@ -62,6 +62,7 @@ const getShortcutDescription = (action: string) => {
     takeScreenshot: '截图并生成解题建议（会新开对话）',
     appendScreenshot: '追加截图并生成解题建议',
     stopSolutionStream: '停止生成',
+    copySolutionCode: '复制AI输出的代码',
     toggleTranscription: '开始/暂停实时语音转录',
     clearTranscription: '清除转录文本（不提交给AI）',
     pageUp: '向上翻页',

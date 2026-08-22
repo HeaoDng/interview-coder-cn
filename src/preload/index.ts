@@ -98,6 +98,20 @@ const api = {
   // Stop solution stream
   stopSolutionStream: () => ipcRenderer.invoke('stopSolutionStream'),
 
+  // Delete a screenshot (by gallery index) from the session and conversation history
+  deleteScreenshot: (index: number) =>
+    ipcRenderer.invoke('delete-screenshot', index) as Promise<boolean>,
+
+  // Copy feedback from the copy-code shortcut
+  onSolutionCopied: (callback: (data: { ok: boolean; message: string }) => void) => {
+    ipcRenderer.on('solution-copied', (_event, data) => {
+      callback(data)
+    })
+  },
+  removeSolutionCopiedListener: () => {
+    ipcRenderer.removeAllListeners('solution-copied')
+  },
+
   // Send follow-up question
   sendFollowUpQuestion: (question: string) => ipcRenderer.invoke('sendFollowUpQuestion', question),
 

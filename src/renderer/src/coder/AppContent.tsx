@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
+import { X } from 'lucide-react'
 import { useShortcutsStore } from '@/lib/store/shortcuts'
 import { useSolutionStore } from '@/lib/store/solution'
 import MarkdownRenderer from '@/components/MarkdownRenderer'
@@ -29,6 +31,13 @@ export function AppContent() {
     // Listen for screenshots-updated events (gallery)
     window.api.onScreenshotsUpdated((screenshots: string[]) => {
       setRecentScreenshots(screenshots)
+      if (screenshots.length === 0) setScreenshotData(null)
+    })
+
+    // Feedback for the copy-code shortcut
+    window.api.onSolutionCopied((data) => {
+      if (data.ok) toast.success(data.message)
+      else toast.error(data.message)
     })
 
     // New session clear (pictures + answers)
@@ -61,6 +70,7 @@ export function AppContent() {
       window.api.removeAiLoadingStartListener()
       window.api.removeAiLoadingEndListener()
       window.api.removeSolutionClearListener()
+      window.api.removeSolutionCopiedListener()
     }
   }, [setScreenshotData, clearSolution, setIsLoading, addSolutionChunk, setErrorMessage])
 
@@ -151,15 +161,23 @@ export function AppContent() {
 
       {/* Screenshot Gallery */}
       {recentScreenshots.length > 0 ? (
-        <div className="mb-4 flex gap-2 overflow-x-auto pb-2">
+        <div className="mb-4 flex gap-4 overflow-x-auto p-2">
           {recentScreenshots.map((data, index) => (
-            <img
-              key={index}
-              src={`data:image/png;base64,${data}`}
-              alt={`Screenshot ${index + 1}`}
-              className="w-40 h-auto flex-shrink-0 border border-gray-600 rounded-lg shadow-lg hover:shadow-xl transition-shadow"
-              title={`第 ${index + 1} 张截图`}
-            />
+            <div key={index} className="relative group flex-shrink-0">
+              <img
+                src={`data:image/png;base64,${data}`}
+                alt={`Screenshot ${index + 1}`}
+                className="w-40 h-auto border border-gray-600 rounded-lg shadow-lg hover:shadow-xl transition-shadow"
+                title={`第 ${index + 1} 张截图`}
+              />
+              <button
+                className="absolute -top-2 -right-2 hidden group-hover:flex items-center justify-center w-5 h-5 rounded-full bg-red-500 text-white shadow-md hover:bg-red-600 transition-colors"
+                title="删除截图"
+                onClick={() => void window.api.deleteScreenshot(index)}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
           ))}
         </div>
       ) : screenshotData ? (

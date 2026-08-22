@@ -97,6 +97,11 @@ export function CustomShortcuts() {
             shortcut="stopSolutionStream"
           />
           <Shortcut
+            label="复制代码"
+            description="复制AI最近输出的代码，无代码块时复制完整回答"
+            shortcut="copySolutionCode"
+          />
+          <Shortcut
             label="语音转录"
             description="开始/暂停实时语音转录"
             shortcut="toggleTranscription"

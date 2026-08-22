@@ -9,12 +9,7 @@ import { Dialog, DialogTitle, DialogContent, DialogFooter } from '@/components/u
 import { Textarea } from '@/components/ui/textarea'
 
 export function AppStatusBar() {
-  const {
-    isLoading: isReceivingSolution,
-    setIsLoading,
-    screenshotData,
-    solutionChunks
-  } = useSolutionStore()
+  const { isLoading: isReceivingSolution, setIsLoading, solutionChunks } = useSolutionStore()
   const { ignoreMouse } = useAppStore()
   const { shortcuts } = useShortcutsStore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -51,7 +46,7 @@ export function AppStatusBar() {
   }
 
   // Check if there's an active conversation
-  const hasActiveConversation = screenshotData && solutionChunks.length > 0
+  const hasActiveConversation = solutionChunks.length > 0
 
   return (
     <div className="absolute bottom-0 flex items-center justify-between w-full text-blue-100 bg-gray-600/10 px-4 pb-1">

@@ -1,4 +1,4 @@
-import { globalShortcut, ipcMain, screen } from 'electron'
+import { clipboard, globalShortcut, ipcMain, screen } from 'electron'
 import type { BrowserWindow, Rectangle } from 'electron'
 import type { ModelMessage } from 'ai'
 import { applyContentProtection } from './main-window'
@@ -52,6 +52,26 @@ function extractErrorMessage(error: unknown): string {
   return error.message || '未知错误'
 }
 
+/**
+ * Extract fenced code blocks (```...```) from a markdown string.
+ * Falls back to a trailing unterminated fence (e.g. generation was interrupted).
+ */
+function extractFencedCode(text: string): string[] {
+  const blocks: string[] = []
+  const fenceRegex = /```[^\n]*\n([\s\S]*?)```/g
+  let match: RegExpExecArray | null
+  while ((match = fenceRegex.exec(text)) !== null) {
+    if (match[1].trim()) blocks.push(match[1].trim())
+  }
+  if (blocks.length === 0) {
+    const openMatch = text.match(/```[^\n]*\n([\s\S]*)/)
+    if (openMatch && openMatch[1].trim()) {
+      blocks.push(openMatch[1].trim())
+    }
+  }
+  return blocks
+}
+
 type Shortcut = {
   action: string
   key: string
@@ -84,6 +104,22 @@ let currentStreamContext: StreamContext | null = null
 let conversationMessages: ModelMessage[] = []
 let recentScreenshots: string[] = [] // 最近截图，水平预览 (限5张)
 let hasAppendSeparator = false
+
+/** Remove the image matching `imageData` from the conversation history (latest match wins) */
+function removeImageFromConversation(imageData: string) {
+  for (let i = conversationMessages.length - 1; i >= 0; i--) {
+    const message = conversationMessages[i]
+    if (message.role !== 'user' || typeof message.content === 'string') continue
+    const parts = message.content as Array<{ type: string; image?: unknown }>
+    const imageIndex = parts.findIndex((part) => part.type === 'image' && part.image === imageData)
+    if (imageIndex === -1) continue
+    parts.splice(imageIndex, 1)
+    if (parts.length === 0) {
+      conversationMessages.splice(i, 1)
+    }
+    return
+  }
+}
 
 const FRONT_REASSERT_DURATION = 8000
 const FRONT_REASSERT_INTERVAL = 100
@@ -510,6 +546,40 @@ const callbacks: Record<string, () => void> = {
     abortCurrentStream('user')
   },
 
+  // Copy the latest model-output code to the clipboard
+  copySolutionCode: () => {
+    const mainWindow = global.mainWindow
+    if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage) return
+
+    const assistantTexts: string[] = []
+    conversationMessages.forEach((message) => {
+      if (message.role !== 'assistant') return
+      if (typeof message.content === 'string') {
+        assistantTexts.push(message.content)
+      } else if (Array.isArray(message.content)) {
+        assistantTexts.push(
+          message.content.map((part) => (part.type === 'text' ? part.text : '')).join('\n')
+        )
+      }
+    })
+
+    let result = { ok: false, message: '暂无可复制的代码' }
+    let copied = false
+    for (let i = assistantTexts.length - 1; i >= 0 && !copied; i--) {
+      const codeBlocks = extractFencedCode(assistantTexts[i])
+      if (codeBlocks.length > 0) {
+        clipboard.writeText(codeBlocks.join('\n\n'))
+        result = { ok: true, message: '代码已复制到剪贴板' }
+        copied = true
+      }
+    }
+    if (!copied && assistantTexts.length > 0) {
+      clipboard.writeText(assistantTexts[assistantTexts.length - 1])
+      result = { ok: true, message: '未找到代码块，已复制完整回答' }
+    }
+    mainWindow.webContents.send('solution-copied', result)
+  },
+
   ignoreOrEnableMouse: () => {
     const mainWindow = global.mainWindow
     if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage) return
@@ -677,6 +747,18 @@ ipcMain.handle('updateShortcuts', (_event, _shortcuts: { action: string; key: st
 ipcMain.handle('stopSolutionStream', () => {
   if (!currentStreamContext) return false
   abortCurrentStream('user')
+  return true
+})
+
+// Delete a screenshot (by gallery index) from the session and the conversation history
+ipcMain.handle('delete-screenshot', (_event, index: number) => {
+  const mainWindow = global.mainWindow
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+  if (!Number.isInteger(index) || index < 0 || index >= recentScreenshots.length) return false
+
+  const [removed] = recentScreenshots.splice(index, 1)
+  removeImageFromConversation(removed)
+  mainWindow.webContents.send('screenshots-updated', recentScreenshots)
   return true
 })
 
