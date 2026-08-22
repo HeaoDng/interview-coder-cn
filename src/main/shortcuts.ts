@@ -121,6 +121,18 @@ function removeImageFromConversation(imageData: string) {
   }
 }
 
+/** Remove a screenshot at `index` from the gallery and the conversation history */
+function removeScreenshotAt(index: number): boolean {
+  const mainWindow = global.mainWindow
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+  if (!Number.isInteger(index) || index < 0 || index >= recentScreenshots.length) return false
+
+  const [removed] = recentScreenshots.splice(index, 1)
+  removeImageFromConversation(removed)
+  mainWindow.webContents.send('screenshots-updated', recentScreenshots)
+  return true
+}
+
 const FRONT_REASSERT_DURATION = 8000
 const FRONT_REASSERT_INTERVAL = 100
 const FRONT_RELATIVE_LEVEL = 100
@@ -403,13 +415,16 @@ const callbacks: Record<string, () => void> = {
           mainWindow.webContents.send('solution-error', extractErrorMessage(error))
         }
       } finally {
-        if (currentStreamContext === streamContext) {
+        // Only the stream that is still current owns the loading state; a
+        // superseded stream must not end the loading of its replacement
+        const isCurrent = currentStreamContext === streamContext
+        if (isCurrent) {
           currentStreamContext = null
         }
         if (!streamStarted && streamContext.reason === 'user') {
           mainWindow.webContents.send('solution-stopped')
         }
-        if (loadingStarted && mainWindow && !mainWindow.isDestroyed()) {
+        if (loadingStarted && isCurrent && mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('ai-loading-end')
         }
       }
@@ -528,13 +543,14 @@ const callbacks: Record<string, () => void> = {
           mainWindow.webContents.send('solution-error', extractErrorMessage(error))
         }
       } finally {
-        if (currentStreamContext === streamContext) {
+        const isCurrent = currentStreamContext === streamContext
+        if (isCurrent) {
           currentStreamContext = null
         }
         if (!streamStarted && streamContext.reason === 'user') {
           mainWindow.webContents.send('solution-stopped')
         }
-        if (loadingStarted && mainWindow && !mainWindow.isDestroyed()) {
+        if (loadingStarted && isCurrent && mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('ai-loading-end')
         }
       }
@@ -578,6 +594,152 @@ const callbacks: Record<string, () => void> = {
       result = { ok: true, message: '未找到代码块，已复制完整回答' }
     }
     mainWindow.webContents.send('solution-copied', result)
+  },
+
+  // Delete the most recent screenshot (gallery + conversation history)
+  deleteLastScreenshot: () => {
+    const mainWindow = global.mainWindow
+    if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage) return
+    if (recentScreenshots.length === 0) return
+    removeScreenshotAt(recentScreenshots.length - 1)
+  },
+
+  // Stage a screenshot into the gallery WITHOUT calling the AI
+  captureScreenshot: async () => {
+    const mainWindow = global.mainWindow
+    if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage || !settings.apiKey) return
+
+    const screenshotData = await takeScreenshot()
+    if (!screenshotData || mainWindow.isDestroyed()) return
+
+    saveScreenshotToDisk(screenshotData)
+    recentScreenshots.push(screenshotData)
+    recentScreenshots = recentScreenshots.slice(-5) // 限5张
+    mainWindow.webContents.send('screenshots-updated', recentScreenshots)
+  },
+
+  // Trigger AI analysis over all staged screenshots (starts a fresh conversation)
+  triggerSolution: async () => {
+    const mainWindow = global.mainWindow
+    if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage || !settings.apiKey) return
+
+    // Nothing staged yet: fall back to the classic capture-and-solve flow
+    if (recentScreenshots.length === 0) {
+      callbacks.takeScreenshot()
+      return
+    }
+
+    abortCurrentStream('new-request')
+    const transcriptionText = getTranscriptionText()
+    if (transcriptionText) {
+      clearTranscriptionText()
+      mainWindow.webContents.send('transcription-cleared')
+    }
+
+    const imageCount = recentScreenshots.length
+    const screenshotText =
+      imageCount > 1 ? `这些是${imageCount}张屏幕截图，请结合所有截图分析解答` : '这是屏幕截图'
+    conversationMessages = [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: transcriptionText
+              ? `这是语音转录内容：\n${transcriptionText}\n\n${screenshotText}`
+              : screenshotText
+          },
+          ...recentScreenshots.map((image) => ({ type: 'image' as const, image }))
+        ]
+      }
+    ]
+
+    const streamContext: StreamContext = {
+      controller: new AbortController(),
+      reason: null
+    }
+    currentStreamContext = streamContext
+    hasAppendSeparator = false
+    mainWindow.webContents.send('solution-clear')
+    mainWindow.webContents.send('ai-loading-start')
+
+    let endedNaturally = true
+    let streamStarted = false
+    let assistantResponse = ''
+    try {
+      const solutionStream = getGeneralStream(
+        conversationMessages,
+        streamContext.controller.signal
+      )
+      streamStarted = true
+      try {
+        for await (const chunk of solutionStream) {
+          if (streamContext.controller.signal.aborted) {
+            endedNaturally = false
+            break
+          }
+          assistantResponse += chunk
+          mainWindow.webContents.send('solution-chunk', chunk)
+        }
+      } catch (error) {
+        if (!streamContext.controller.signal.aborted) {
+          endedNaturally = false
+          console.error('Error streaming staged solution:', error)
+          mainWindow.webContents.send('solution-error', extractErrorMessage(error))
+        } else {
+          endedNaturally = false
+        }
+      }
+
+      if (streamContext.controller.signal.aborted) {
+        if (streamContext.reason === 'user') {
+          mainWindow.webContents.send('solution-stopped')
+        }
+      } else if (endedNaturally) {
+        // Add assistant response to conversation history
+        if (assistantResponse) {
+          conversationMessages.push({
+            role: 'assistant',
+            content: assistantResponse
+          })
+        }
+        mainWindow.webContents.send('solution-complete')
+      }
+    } catch (error) {
+      if (streamContext.controller.signal.aborted) {
+        if (streamContext.reason === 'user') {
+          mainWindow.webContents.send('solution-stopped')
+        }
+      } else {
+        endedNaturally = false
+        console.error('Error streaming staged solution:', error)
+        mainWindow.webContents.send('solution-error', extractErrorMessage(error))
+      }
+    } finally {
+      const isCurrent = currentStreamContext === streamContext
+      if (isCurrent) {
+        currentStreamContext = null
+      }
+      if (!streamStarted && streamContext.reason === 'user') {
+        mainWindow.webContents.send('solution-stopped')
+      }
+      if (isCurrent && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('ai-loading-end')
+      }
+    }
+  },
+
+  // Clear all staged screenshots and reset the conversation
+  clearScreenshots: () => {
+    const mainWindow = global.mainWindow
+    if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage) return
+
+    abortCurrentStream('user')
+    recentScreenshots = []
+    conversationMessages = []
+    hasAppendSeparator = false
+    mainWindow.webContents.send('screenshots-updated', recentScreenshots)
+    mainWindow.webContents.send('solution-clear')
   },
 
   ignoreOrEnableMouse: () => {
@@ -654,6 +816,9 @@ const callbacks: Record<string, () => void> = {
 const clickableActions = new Set([
   'takeScreenshot',
   'appendScreenshot',
+  'captureScreenshot',
+  'triggerSolution',
+  'clearScreenshots',
   'stopSolutionStream',
   'ignoreOrEnableMouse',
   'increaseOpacity',
@@ -751,16 +916,7 @@ ipcMain.handle('stopSolutionStream', () => {
 })
 
 // Delete a screenshot (by gallery index) from the session and the conversation history
-ipcMain.handle('delete-screenshot', (_event, index: number) => {
-  const mainWindow = global.mainWindow
-  if (!mainWindow || mainWindow.isDestroyed()) return false
-  if (!Number.isInteger(index) || index < 0 || index >= recentScreenshots.length) return false
-
-  const [removed] = recentScreenshots.splice(index, 1)
-  removeImageFromConversation(removed)
-  mainWindow.webContents.send('screenshots-updated', recentScreenshots)
-  return true
-})
+ipcMain.handle('delete-screenshot', (_event, index: number) => removeScreenshotAt(index))
 
 ipcMain.handle('triggerAction', (_event, action: string) => {
   if (!clickableActions.has(action)) return false

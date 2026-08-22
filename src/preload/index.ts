@@ -38,6 +38,9 @@ const api = {
     action:
       | 'takeScreenshot'
       | 'appendScreenshot'
+      | 'captureScreenshot'
+      | 'triggerSolution'
+      | 'clearScreenshots'
       | 'stopSolutionStream'
       | 'ignoreOrEnableMouse'
       | 'increaseOpacity'

@@ -92,6 +92,16 @@ export function CustomShortcuts() {
             shortcut="appendScreenshot"
           />
           <Shortcut
+            label="暂存截图"
+            description="仅截取屏幕存入预览区（最多5张），不触发AI思考"
+            shortcut="captureScreenshot"
+          />
+          <Shortcut
+            label="触发AI思考"
+            description="结合预览区全部截图开始分析解答；无截图时等价于截图解题"
+            shortcut="triggerSolution"
+          />
+          <Shortcut
             label="停止生成"
             description="打断当前正在生成的解题建议"
             shortcut="stopSolutionStream"
@@ -100,6 +110,16 @@ export function CustomShortcuts() {
             label="复制代码"
             description="复制AI最近输出的代码，无代码块时复制完整回答"
             shortcut="copySolutionCode"
+          />
+          <Shortcut
+            label="删除截图"
+            description="删除最后一张截图，并从对话上下文中同步移除"
+            shortcut="deleteLastScreenshot"
+          />
+          <Shortcut
+            label="清空截图"
+            description="清空全部截图并重置当前对话与回答"
+            shortcut="clearScreenshots"
           />
           <Shortcut
             label="语音转录"

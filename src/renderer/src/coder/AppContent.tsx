@@ -13,6 +13,7 @@ export function AppContent() {
     screenshotData,
     solutionChunks,
     errorMessage,
+    isLoading,
     setScreenshotData,
     setIsLoading,
     addSolutionChunk,
@@ -190,6 +191,25 @@ export function AppContent() {
         </div>
       ) : (
         <ShortcutTip />
+      )}
+
+      {/* Staged screenshot actions: trigger AI or clear everything */}
+      {recentScreenshots.length > 0 && (
+        <div className="mb-4 flex items-center gap-2">
+          <button
+            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-md hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+            disabled={isLoading}
+            onClick={() => void window.api.triggerAction('triggerSolution')}
+          >
+            🚀 触发 AI 思考
+          </button>
+          <button
+            className="rounded-lg border border-red-400/60 px-3 py-1.5 text-sm text-red-300 hover:bg-red-500/20 transition-colors"
+            onClick={() => void window.api.triggerAction('clearScreenshots')}
+          >
+            🗑️ 清空
+          </button>
+        </div>
       )}
 
       {/* Solution Display */}
