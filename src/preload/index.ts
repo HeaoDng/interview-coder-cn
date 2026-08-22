@@ -105,6 +105,9 @@ const api = {
   deleteScreenshot: (index: number) =>
     ipcRenderer.invoke('delete-screenshot', index) as Promise<boolean>,
 
+  // Current staged screenshots (to restore the gallery after remount)
+  getRecentScreenshots: () => ipcRenderer.invoke('get-recent-screenshots') as Promise<string[]>,
+
   // Copy feedback from the copy-code shortcut
   onSolutionCopied: (callback: (data: { ok: boolean; message: string }) => void) => {
     ipcRenderer.on('solution-copied', (_event, data) => {

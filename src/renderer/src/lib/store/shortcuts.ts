@@ -63,12 +63,14 @@ const defaultShortcuts: Record<string, Omit<Shortcut, 'defaultKey'>> = {
   },
   captureScreenshot: {
     action: 'captureScreenshot',
-    key: 'Alt+S',
+    // Windows uses Ctrl-based combos: upstream found plain-Alt shortcuts steal
+    // page focus there, and Alt+Space is the system window-menu accelerator
+    key: isMac ? 'Alt+S' : 'CommandOrControl+Shift+S',
     category: 'Screenshot & AI'
   },
   triggerSolution: {
     action: 'triggerSolution',
-    key: 'Alt+Space',
+    key: isMac ? 'Alt+Space' : 'CommandOrControl+Shift+Space',
     category: 'Screenshot & AI'
   },
   appendScreenshot: {
@@ -88,12 +90,12 @@ const defaultShortcuts: Record<string, Omit<Shortcut, 'defaultKey'>> = {
   },
   deleteLastScreenshot: {
     action: 'deleteLastScreenshot',
-    key: 'Alt+Backspace',
+    key: isMac ? 'Alt+Backspace' : 'CommandOrControl+Backspace',
     category: 'Screenshot & AI'
   },
   clearScreenshots: {
     action: 'clearScreenshots',
-    key: 'Alt+Shift+Backspace',
+    key: isMac ? 'Alt+Shift+Backspace' : 'CommandOrControl+Shift+Backspace',
     category: 'Screenshot & AI'
   },
   toggleTranscription: {
@@ -166,25 +168,14 @@ export const useShortcutsStore = create<ShortcutsStore>()(
       version: 8,
       migrate: (state: unknown, version: number) => {
         if (!isPersistedShortcutsState(state) || !state.shortcuts) return state as ShortcutsStore
-        // Merge in any new default shortcuts that are missing
-        const defaults = Object.fromEntries(
-          Object.entries(defaultShortcuts).map(([action, shortcut]) => [
-            action,
-            { ...shortcut, defaultKey: shortcut.key }
-          ])
-        )
-        const merged = {
-          ...state,
-          shortcuts: {
-            ...defaults,
-            ...state.shortcuts
-          }
-        } as ShortcutsStore
+        // Rewrite version-specific quirks on the PERSISTED entries first, then
+        // merge in current defaults so new actions never hit legacy rewrites
+        const persisted = { ...state.shortcuts }
 
         // v2→v3: On Windows, migrate Alt shortcuts to CommandOrControl (Ctrl)
         if (version < 3 && !isMac) {
-          for (const [action, shortcut] of Object.entries(merged.shortcuts)) {
-            merged.shortcuts[action] = {
+          for (const [action, shortcut] of Object.entries(persisted)) {
+            persisted[action] = {
               ...shortcut,
               key: shortcut.key.replace(/\bAlt\b/g, 'CommandOrControl'),
               defaultKey: shortcut.defaultKey.replace(/\bAlt\b/g, 'CommandOrControl')
@@ -192,20 +183,33 @@ export const useShortcutsStore = create<ShortcutsStore>()(
           }
         }
 
-        // v7→v8: deleteLastScreenshot default moved to the literal Alt+Backspace;
-        // only rewrite when the user never customized it
+        // v7→v8: deleteLastScreenshot default moved to the platform Alt/
+        // Ctrl+Backspace combo; only rewrite when the user never customized it
         if (version < 8) {
-          const deleteLast = merged.shortcuts.deleteLastScreenshot
+          const deleteLast = persisted.deleteLastScreenshot
+          const defaultKey = isMac ? 'Alt+Backspace' : 'CommandOrControl+Backspace'
           if (deleteLast && deleteLast.key === deleteLast.defaultKey) {
-            merged.shortcuts.deleteLastScreenshot = {
+            persisted.deleteLastScreenshot = {
               ...deleteLast,
-              key: 'Alt+Backspace',
-              defaultKey: 'Alt+Backspace'
+              key: defaultKey,
+              defaultKey
             }
           }
         }
 
-        return merged
+        const defaults = Object.fromEntries(
+          Object.entries(defaultShortcuts).map(([action, shortcut]) => [
+            action,
+            { ...shortcut, defaultKey: shortcut.key }
+          ])
+        )
+        return {
+          ...state,
+          shortcuts: {
+            ...defaults,
+            ...persisted
+          }
+        } as ShortcutsStore
       }
     }
   )

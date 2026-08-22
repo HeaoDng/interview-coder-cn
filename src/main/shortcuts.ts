@@ -326,6 +326,11 @@ const callbacks: Record<string, () => void> = {
     let loadingStarted = false
     const screenshotData = await takeScreenshot()
     if (screenshotData && mainWindow && !mainWindow.isDestroyed()) {
+      // Another capture may have claimed the stream while we were capturing
+      if (currentStreamContext) {
+        currentStreamContext.reason = 'new-request'
+        currentStreamContext.controller.abort()
+      }
       saveScreenshotToDisk(screenshotData)
       const transcriptionText = getTranscriptionText()
       if (transcriptionText) {
@@ -447,6 +452,11 @@ const callbacks: Record<string, () => void> = {
 
     const screenshotData = await takeScreenshot()
     if (screenshotData && mainWindow && !mainWindow.isDestroyed()) {
+      // Another capture may have claimed the stream while we were capturing
+      if (currentStreamContext) {
+        currentStreamContext.reason = 'new-request'
+        currentStreamContext.controller.abort()
+      }
       saveScreenshotToDisk(screenshotData)
       const transcriptionText = getTranscriptionText()
       if (transcriptionText) {
@@ -661,6 +671,9 @@ const callbacks: Record<string, () => void> = {
     currentStreamContext = streamContext
     hasAppendSeparator = false
     mainWindow.webContents.send('solution-clear')
+    // solution-clear also wipes the renderer-side gallery; restore the staged
+    // screenshots so they stay visible for deletion or another trigger
+    mainWindow.webContents.send('screenshots-updated', recentScreenshots)
     mainWindow.webContents.send('ai-loading-start')
 
     let endedNaturally = true
@@ -917,6 +930,9 @@ ipcMain.handle('stopSolutionStream', () => {
 
 // Delete a screenshot (by gallery index) from the session and the conversation history
 ipcMain.handle('delete-screenshot', (_event, index: number) => removeScreenshotAt(index))
+
+// Current staged screenshots, so the renderer can restore the gallery on remount
+ipcMain.handle('get-recent-screenshots', () => recentScreenshots)
 
 ipcMain.handle('triggerAction', (_event, action: string) => {
   if (!clickableActions.has(action)) return false

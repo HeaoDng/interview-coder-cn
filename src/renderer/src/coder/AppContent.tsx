@@ -24,6 +24,11 @@ export function AppContent() {
   const [recentScreenshots, setRecentScreenshots] = useState<string[]>([])
 
   useEffect(() => {
+    // Restore staged screenshots when returning to the coder page
+    window.api.getRecentScreenshots().then((screenshots) => {
+      if (screenshots.length > 0) setRecentScreenshots(screenshots)
+    })
+
     // Listen for screenshot events (latest)
     window.api.onScreenshotTaken((data: string) => {
       setScreenshotData(data)
