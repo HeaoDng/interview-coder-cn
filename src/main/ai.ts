@@ -8,8 +8,19 @@ import { settings, AppSettings } from './settings'
 // GPT-5 can spend minutes before emitting the first token
 const longRunDispatcher = new Agent({
   headersTimeout: 0,
-  bodyTimeout: 0
+  bodyTimeout: 0,
+  connect: {
+    timeout: 60_000,
+    // TCP keepalive probes every 10s so NAT/proxy/VPN middleboxes don't reap
+    // the connection while the model thinks silently for minutes
+    keepAlive: true,
+    keepAliveInitialDelay: 10_000
+  }
 })
+
+// Deep-reasoning turns plus self-hosted relays with flaky upstream pools need
+// more patience than the SDK default (2 retries over a few seconds)
+const STREAM_MAX_RETRIES = 5
 
 const longRunFetch = ((input: Parameters<typeof undiciFetch>[0], init?: RequestInit) =>
   undiciFetch(input, {
@@ -46,6 +57,7 @@ export function getSolutionStream(messages: ModelMessage[], abortSignal?: AbortS
     system: getSystemPrompt(),
     messages,
     abortSignal,
+    maxRetries: STREAM_MAX_RETRIES,
     onError: (err) => {
       throw err.error ?? err
     }
@@ -79,6 +91,7 @@ export function getFollowUpStream(
     system: getSystemPrompt(),
     messages: updatedMessages,
     abortSignal,
+    maxRetries: STREAM_MAX_RETRIES,
     onError: (err) => {
       throw err.error ?? err
     }
@@ -96,6 +109,7 @@ export function getGeneralStream(messages: ModelMessage[], abortSignal?: AbortSi
     ),
     messages,
     abortSignal,
+    maxRetries: STREAM_MAX_RETRIES,
     onError: (err) => {
       throw err.error ?? err
     }
