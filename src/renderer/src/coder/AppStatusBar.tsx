@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Pointer, PointerOff, OctagonX, MessageCircle } from 'lucide-react'
 import { useSolutionStore } from '@/lib/store/solution'
 import { useShortcutsStore } from '@/lib/store/shortcuts'
@@ -14,6 +14,21 @@ export function AppStatusBar() {
   const { shortcuts } = useShortcutsStore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [questionInput, setQuestionInput] = useState('')
+  const [waitSeconds, setWaitSeconds] = useState(0)
+
+  // Live wait timer so long deep-reasoning turns read as "thinking",
+  // not as a stalled request
+  useEffect(() => {
+    if (!isReceivingSolution) {
+      setWaitSeconds(0)
+      return
+    }
+    const startedAt = Date.now()
+    const timer = setInterval(() => {
+      setWaitSeconds(Math.floor((Date.now() - startedAt) / 1000))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [isReceivingSolution])
 
   const handleStop = () => {
     setIsLoading(false)
@@ -47,7 +62,6 @@ export function AppStatusBar() {
 
   // Check if there's an active conversation
   const hasActiveConversation = solutionChunks.length > 0
-
   return (
     <div className="absolute bottom-0 flex items-center justify-between w-full text-blue-100 bg-gray-600/10 px-4 pb-1">
       <div>
@@ -55,6 +69,11 @@ export function AppStatusBar() {
           <div className="flex items-center space-x-2">
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-r-2 border-[currentColor]"></div>
             <span className="text-sm">正在生成...</span>
+            {waitSeconds >= 10 && (
+              <span className="text-xs opacity-60">
+                模型思考中 · 已等待 {formatWait(waitSeconds)}
+              </span>
+            )}
             <div className="fixed bottom-4 left-1/2 -translate-x-1/2 flex justify-center z-50 pointer-events-none">
               <Button
                 variant="secondary"
@@ -153,4 +172,10 @@ export function AppStatusBar() {
       </Dialog>
     </div>
   )
+}
+
+function formatWait(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return minutes > 0 ? `${minutes}分${seconds.toString().padStart(2, '0')}秒` : `${seconds}秒`
 }

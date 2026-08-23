@@ -1,6 +1,21 @@
 import { streamText, type ModelMessage } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
+import { net } from 'electron'
 import { settings, AppSettings } from './settings'
+
+// Route AI requests through Chromium's network stack instead of Node's undici
+// fetch, whose default 300s headers/body idle timeouts kill connections while
+// deep-reasoning models (GPT-5 etc.) think for minutes before the first token
+const chromiumFetch: typeof fetch = (input, init) =>
+  net.fetch(input as unknown as Parameters<typeof net.fetch>[0], init) as Promise<Response>
+
+function createClient() {
+  return createOpenAI({
+    baseURL: settings.apiBaseURL,
+    apiKey: settings.apiKey,
+    fetch: chromiumFetch
+  })
+}
 
 // The system prompt is fully managed by the renderer (prompt scenes in the
 // settings store) and synced here via updateAppSettings on app startup
@@ -16,10 +31,7 @@ function getModel(_settings: AppSettings) {
 }
 
 export function getSolutionStream(messages: ModelMessage[], abortSignal?: AbortSignal) {
-  const openai = createOpenAI({
-    baseURL: settings.apiBaseURL,
-    apiKey: settings.apiKey
-  })
+  const openai = createClient()
 
   const { textStream } = streamText({
     model: openai.chat(getModel(settings)),
@@ -38,10 +50,7 @@ export function getFollowUpStream(
   userQuestion: string,
   abortSignal?: AbortSignal
 ) {
-  const openai = createOpenAI({
-    baseURL: settings.apiBaseURL,
-    apiKey: settings.apiKey
-  })
+  const openai = createClient()
 
   // Add the user's follow-up question to the conversation
   const updatedMessages: ModelMessage[] = [
@@ -70,10 +79,7 @@ export function getFollowUpStream(
 }
 
 export function getGeneralStream(messages: ModelMessage[], abortSignal?: AbortSignal) {
-  const openai = createOpenAI({
-    baseURL: settings.apiBaseURL,
-    apiKey: settings.apiKey
-  })
+  const openai = createClient()
 
   const { textStream } = streamText({
     model: openai.chat(getModel(settings)),
