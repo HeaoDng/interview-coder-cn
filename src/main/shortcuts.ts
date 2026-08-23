@@ -9,6 +9,7 @@ import {
   reassertToolbarTopMost
 } from './toolbar-window'
 import { takeScreenshot } from './take-screenshot'
+import { compressForApi } from './image-compression'
 import { saveScreenshotToDisk } from './save-screenshot'
 import { getSolutionStream, getFollowUpStream, getGeneralStream } from './ai'
 import { state } from './state'
@@ -370,7 +371,7 @@ const callbacks: Record<string, () => void> = {
             },
             {
               type: 'image',
-              image: screenshotData
+              image: compressForApi(screenshotData)
             }
           ]
         }
@@ -496,7 +497,7 @@ const callbacks: Record<string, () => void> = {
           },
           {
             type: 'image',
-            image: screenshotData
+            image: compressForApi(screenshotData)
           }
         ]
       }
@@ -680,7 +681,10 @@ const callbacks: Record<string, () => void> = {
               ? `这是语音转录内容：\n${transcriptionText}\n\n${screenshotText}`
               : screenshotText
           },
-          ...recentScreenshots.map((image) => ({ type: 'image' as const, image }))
+          ...recentScreenshots.map((image) => ({
+            type: 'image' as const,
+            image: compressForApi(image)
+          }))
         ]
       }
     ]
