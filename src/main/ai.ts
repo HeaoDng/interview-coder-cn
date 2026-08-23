@@ -1,19 +1,27 @@
 import { streamText, type ModelMessage } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
-import { net } from 'electron'
+import { Agent, fetch as undiciFetch } from 'undici'
 import { settings, AppSettings } from './settings'
 
-// Route AI requests through Chromium's network stack instead of Node's undici
-// fetch, whose default 300s headers/body idle timeouts kill connections while
-// deep-reasoning models (GPT-5 etc.) think for minutes before the first token
-const chromiumFetch: typeof fetch = (input, init) =>
-  net.fetch(input as unknown as Parameters<typeof net.fetch>[0], init) as Promise<Response>
+// Keep AI requests on Node's fetch (proven to work in every environment) but
+// disable undici's default 300s idle timeouts: deep-reasoning models like
+// GPT-5 can spend minutes before emitting the first token
+const longRunDispatcher = new Agent({
+  headersTimeout: 0,
+  bodyTimeout: 0
+})
+
+const longRunFetch = ((input: Parameters<typeof undiciFetch>[0], init?: RequestInit) =>
+  undiciFetch(input, {
+    ...init,
+    dispatcher: longRunDispatcher
+  } as Parameters<typeof undiciFetch>[1])) as unknown as typeof fetch
 
 function createClient() {
   return createOpenAI({
     baseURL: settings.apiBaseURL,
     apiKey: settings.apiKey,
-    fetch: chromiumFetch
+    fetch: longRunFetch
   })
 }
 

@@ -20,7 +20,13 @@ import { getTranscriptionText, clearTranscriptionText } from './transcription'
  */
 function extractErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) {
-    return String(error) || '未知错误'
+    const text = String(error)
+    if (text) return text
+    try {
+      return JSON.stringify(error) || '未知错误'
+    } catch {
+      return '未知错误'
+    }
   }
 
   // Try to extract responseBody from AI SDK errors
@@ -48,8 +54,23 @@ function extractErrorMessage(error: unknown): string {
     }
   }
 
-  // Fallback to error message
-  return error.message || '未知错误'
+  // Fallback to error message; include the cause chain ("fetch failed" errors
+  // carry the real reason, e.g. HeadersTimeoutError, inside .cause)
+  let message = [error.name === 'Error' ? '' : error.name, error.message]
+    .filter(Boolean)
+    .join(': ')
+  let cause = (error as { cause?: unknown }).cause
+  let depth = 0
+  while (cause instanceof Error && depth < 3) {
+    const causeText = cause.message || cause.name
+    if (causeText && !message.includes(causeText)) {
+      message = message ? `${message} (${causeText})` : causeText
+    }
+    cause = (cause as { cause?: unknown }).cause
+    depth++
+  }
+
+  return message || '未知错误'
 }
 
 /**
